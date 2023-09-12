@@ -1,200 +1,125 @@
-#include <stack>
 #include <iostream>
-#include <unistd.h>
+#include <thread>
+#include <vector>
+#include <fstream>
+#include <mutex>
+#include <chrono>
 
 using namespace std;
 
-char **maze;
-
-int num_rows;
-int num_cols;
-
-struct pos_t
+struct Maze
 {
-  int i;
-  int j;
+  vector<vector<char>> maze;
+  int numRows;
+  int numCols;
 };
 
-stack<pos_t> valid_positions;
+mutex outputMutex;
 
-/**
- * The function checks if a given position is valid in a maze by ensuring it is
- * within the maze boundaries and not blocked by walls or obstacles.
- * 
- * @param pos The parameter `pos` is of type `pos_t`, which is likely a custom
- * struct or class representing a position in a maze. It likely has two members
- * `i` and `j`, representing the row and column indices respectively.
- * 
- * @return The function is_valid() returns a boolean value. It returns true if the
- * given position (pos) is valid, and false otherwise.
- */
-
-bool is_valid(pos_t pos)
+bool is_valid(const Maze &maze, int i, int j)
 {
-  if (pos.i < 0 || pos.i >= num_rows || pos.j < 0 || pos.j >= num_cols)
-  {
-    return false;
-  }
-  if (maze[pos.i][pos.j] == '#' || maze[pos.i][pos.j] == 'o')
-  {
-    return false;
-  }
-  return true;
+  return (i >= 0 && i < maze.numRows && j >= 0 && j < maze.numCols &&
+          maze.maze[i][j] != '#' && maze.maze[i][j] != 'o');
 }
 
-/**
- * The function adds a valid position to a collection of valid positions if the
- * position is valid.
- * 
- * @param pos The parameter "pos" is of type "pos_t", which is likely a custom
- * data type representing a position.
- */
-
-void add_valid_position(pos_t pos)
+void print_maze(const Maze &maze, bool isFound)
 {
-  if (is_valid(pos))
+  lock_guard<mutex> lock(outputMutex);
+  system("clear");
+  for (int i = 0; i < maze.numRows; ++i)
   {
-    valid_positions.push(pos);
-  }
-}
-
-/**
- * The function "load_maze" reads a maze from a file and returns the initial
- * position of the player.
- * 
- * @param file_name A string representing the name of the file containing the maze
- * data.
- * 
- * @return a variable of type `pos_t`, which represents the initial position in
- * the maze.
- */
-
-pos_t load_maze(const char *file_name)
-{
-  pos_t initial_pos;
-  FILE *file = fopen(file_name, "r");
-
-  fscanf(file, "%d %d", &num_rows, &num_cols);
-
-  maze = (char **)malloc(num_rows * sizeof(char *));
-  for (int i = 0; i < num_rows; ++i)
-  {
-    maze[i] = (char *)malloc(num_cols * sizeof(char));
-  }
-
-  for (int i = 0; i < num_rows; ++i)
-  {
-    for (int j = 0; j < num_cols; ++j)
+    for (int j = 0; j < maze.numCols; ++j)
     {
-      fscanf(file, " %c", &maze[i][j]);
-      if (maze[i][j] == 'e')
-      {
-        initial_pos.i = i;
-        initial_pos.j = j;
-      }
-    }
-  }
-
-  return initial_pos;
-}
-
-/**
- * The function `print_maze` prints a maze, highlighting certain characters based
- * on whether they have been found or not.
- * 
- * @param isFound The parameter `isFound` is a boolean variable that indicates
- * whether the maze has been solved or not. If `isFound` is true, it means the
- * maze has been solved and the path to the exit has been found. If `isFound` is
- * false, it means the maze has not
- */
-
-void print_maze(bool isFound)
-{
-  for (int i = 0; i < num_rows; ++i)
-  {
-    for (int j = 0; j < num_cols; ++j)
-    {
-      if (isFound && (maze[i][j] == 'o' || maze[i][j] == 's')) printf("\033[1;32m%c\033[0m", maze[i][j]);
-      else if (isFound && maze[i][j] == '#') printf("\033[31m%c\033[0m", maze[i][j]);
+      if (isFound && (maze.maze[i][j] == 'o' || maze.maze[i][j] == 's'))
+        cout << "\033[1;32m" << maze.maze[i][j] << "\033[0m";
+      else if (isFound && maze.maze[i][j] == '#')
+        cout << "\033[31m" << maze.maze[i][j] << "\033[0m";
       else
       {
-        if (maze[i][j] == 'o') printf("\033[31m%c\033[0m", maze[i][j]);
-        else printf("%c", maze[i][j]);
+        if (maze.maze[i][j] == 'o')
+          cout << "\033[31m" << maze.maze[i][j] << "\033[0m";
+        else
+          cout << maze.maze[i][j];
       }
     }
-    printf("\n");
+    cout << endl;
   }
 }
 
-/**
- * The function "walk" recursively explores a maze, marking visited positions with
- * 'o' and returning true if it reaches the goal position 's'.
- * 
- * @param pos The parameter `pos` is of type `pos_t`, which represents a position
- * in the maze. It has two members: `i` and `j`, which represent the row and
- * column indices of the position in the maze, respectively.
- * 
- * @return a boolean value.
- */
-
-bool walk(pos_t pos)
+void walk(Maze &maze, int i, int j, bool &exit_found)
 {
-  system("clear");
-  print_maze(false);
-  usleep(10000);
-
-  if (maze[pos.i][pos.j] == 's')
+  if (maze.maze[i][j] == 's')
   {
-    system("clear");
-    print_maze(true);
-    return true;
+    print_maze(maze, true);
+    exit_found = true;
+    return;
   }
-  maze[pos.i][pos.j] = 'o';
-
-  pos_t new_pos;
-
-  new_pos.i = pos.i - 1;
-  new_pos.j = pos.j;
-  add_valid_position(new_pos);
-
-  new_pos.i = pos.i + 1;
-  new_pos.j = pos.j;
-  add_valid_position(new_pos);
-
-  new_pos.i = pos.i;
-  new_pos.j = pos.j - 1;
-  add_valid_position(new_pos);
-
-  new_pos.i = pos.i;
-  new_pos.j = pos.j + 1;
-  add_valid_position(new_pos);
-
-  if (valid_positions.empty())
+  maze.maze[i][j] = 'o';
+  print_maze(maze, false);
+  this_thread::sleep_for(chrono::milliseconds(100));
+  vector<thread> threads;
+  int di[] = {-1, 1, 0, 0};
+  int dj[] = {0, 0, -1, 1};
+  for (int k = 0; k < 4; ++k)
   {
-    return false;
+    int ni = i + di[k];
+    int nj = j + dj[k];
+    if (is_valid(maze, ni, nj))
+    {
+      threads.emplace_back(walk, ref(maze), ni, nj, ref(exit_found));
+    }
   }
+  for (auto &t : threads)
+  {
+    t.join();
+  }
+}
 
-  pos_t next_pos = valid_positions.top();
-  valid_positions.pop();
-
-  return walk(next_pos);
+Maze load_maze(const char *file_name)
+{
+  Maze maze;
+  ifstream file(file_name);
+  if (!file.is_open())
+  {
+    cerr << "Error: Unable to open file" << endl;
+    exit(1);
+  }
+  file >> maze.numRows >> maze.numCols;
+  maze.maze.resize(maze.numRows, vector<char>(maze.numCols));
+  for (int i = 0; i < maze.numRows; ++i)
+  {
+    for (int j = 0; j < maze.numCols; ++j)
+    {
+      file >> maze.maze[i][j];
+    }
+  }
+  file.close();
+  return maze;
 }
 
 int main(int argc, char *argv[])
 {
-
-  pos_t initial_pos = load_maze(argv[1]);
-
-  bool exit_found = walk(initial_pos);
-
-  if (exit_found)
+  if (argc != 2)
   {
-    printf("Exit found!\n");
+    cerr << "Usage: " << argv[0] << " <data_file>" << endl;
+    return 1;
   }
-  else
+  Maze maze = load_maze(argv[1]);
+  int start_i, start_j;
+  for (int i = 0; i < maze.numRows; ++i)
   {
-    printf("Exit not found!\n");
+    for (int j = 0; j < maze.numCols; ++j)
+    {
+      if (maze.maze[i][j] == 'e')
+      {
+        start_i = i;
+        start_j = j;
+        break;
+      }
+    }
   }
-
+  bool exit_found = false;
+  walk(maze, start_i, start_j, exit_found);
+  exit_found ? cout << "Exit found!" << endl : cout << "Exit not found!" << endl;
   return 0;
 }
